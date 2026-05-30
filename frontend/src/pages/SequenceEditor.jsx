@@ -42,6 +42,9 @@ export default function SequenceEditor() {
     step_number: 1, subject: '', body: '', scheduled_at: '', delay_days: 0, delay_hours: 0
   }]);
 
+  const MAX_FOLLOWUPS = 6;
+  const MAX_TOTAL_EMAILS = MAX_FOLLOWUPS + 1;
+
   const load = useCallback(async () => {
     try {
       const [seqRes, aliasRes, smtpRes] = await Promise.all([
@@ -144,6 +147,10 @@ export default function SequenceEditor() {
   };
 
   const addFollowUp = () => {
+    if (emails.length >= MAX_TOTAL_EMAILS) {
+      toast.error(`You can add at most ${MAX_FOLLOWUPS} follow-ups`);
+      return;
+    }
     setEmails(prev => [...prev, {
       step_number: prev.length + 1, subject: '', body: '', scheduled_at: '', delay_days: 3, delay_hours: 0
     }]);
@@ -469,10 +476,13 @@ export default function SequenceEditor() {
             </div>
 
             <div className="flex-center gap-8" style={{ marginTop: 8 }}>
-              <button className="btn btn-secondary" onClick={addFollowUp}>+ Add Follow-up</button>
+              <button className="btn btn-secondary" onClick={addFollowUp} disabled={emails.length >= MAX_TOTAL_EMAILS}>+ Add Follow-up</button>
               <button className="btn btn-primary" onClick={saveEmails} disabled={saving}>
                 {saving ? 'Saving...' : 'Save All Emails'}
               </button>
+            </div>
+            <div className="form-hint" style={{ marginTop: 10 }}>
+              Limit: {MAX_FOLLOWUPS} follow-ups max ({MAX_TOTAL_EMAILS} total emails)
             </div>
           </div>
         )}
@@ -488,7 +498,7 @@ export default function SequenceEditor() {
                 { label: 'Contacts uploaded', ok: contactCount > 0, detail: contactCount > 0 ? `${contactCount} contacts` : 'Upload a CSV' },
                 { label: 'Initial email written', ok: !!emails[0]?.subject && !!emails[0]?.body },
                 { label: 'Initial send time set', ok: !!emails[0]?.scheduled_at, detail: emails[0]?.scheduled_at ? new Date(emails[0].scheduled_at).toLocaleString() : 'Set a date/time' },
-                { label: 'Follow-ups configured', ok: emails.length > 1, detail: emails.length > 1 ? `${emails.length - 1} follow-up(s)` : 'Optional' },
+                { label: 'Follow-ups configured', ok: emails.length > 1, detail: emails.length > 1 ? `${Math.min(emails.length - 1, MAX_FOLLOWUPS)} follow-up(s)` : 'Optional' },
                 { label: 'Attachment ready', ok: true, detail: attachFilename || 'None (optional)' },
               ].map(item => (
                 <div key={item.label} className="flex-center gap-12" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
@@ -506,7 +516,7 @@ export default function SequenceEditor() {
               <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 2 }}>
                 <div>📧 From: <strong style={{ color: 'var(--text)' }}>{smtpAccountId ? `SMTP: ${smtpAccounts.find(a=>a.id===smtpAccountId)?.smtp_user || smtpAccountId}` : (fromEmail || 'Not set')}</strong></div>
                 <div>👥 Contacts: <strong style={{ color: 'var(--text)' }}>{contactCount}</strong></div>
-                <div>📬 Steps: <strong style={{ color: 'var(--text)' }}>{emails.length} ({emails.length === 1 ? 'initial only' : `1 initial + ${emails.length - 1} follow-up(s)`})</strong></div>
+                <div>📬 Steps: <strong style={{ color: 'var(--text)' }}>{emails.length} ({emails.length === 1 ? 'initial only' : `1 initial + ${Math.min(emails.length - 1, MAX_FOLLOWUPS)} follow-up(s)`})</strong></div>
                 <div>📎 Attachment: <strong style={{ color: 'var(--text)' }}>{attachFilename || 'None'}</strong></div>
                 <div>✍️ Signature: <strong style={{ color: 'var(--text)' }}>{includeSignature ? 'Included' : 'Not included'}</strong></div>
                 <div>👁 Open Tracking: <strong style={{ color: 'var(--text)' }}>{openTracking ? 'Enabled' : 'Disabled'}</strong></div>

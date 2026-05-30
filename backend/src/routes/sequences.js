@@ -215,11 +215,26 @@ router.delete('/:id/attachment', authMiddleware, async (req, res) => {
 router.put('/:id/emails', authMiddleware, async (req, res) => {
   try {
     const { emails } = req.body; // array of { step_number, subject, body, scheduled_at, delay_days, delay_hours }
+
+    if (!Array.isArray(emails) || emails.length === 0) {
+      return res.status(400).json({ error: 'At least one email step is required' });
+    }
+
+    if (emails.length > 7) {
+      return res.status(400).json({ error: 'A sequence can have at most 6 follow-ups (7 total emails)' });
+    }
+
+    const sortedSteps = [...emails].sort((a, b) => (a.step_number || 0) - (b.step_number || 0));
+    for (let i = 0; i < sortedSteps.length; i += 1) {
+      if (sortedSteps[i].step_number !== i + 1) {
+        return res.status(400).json({ error: 'Email steps must be numbered consecutively starting at 1' });
+      }
+    }
     
     // Delete existing steps
     await pool.query('DELETE FROM sequence_emails WHERE sequence_id = $1', [req.params.id]);
     
-    for (const email of emails) {
+    for (const email of sortedSteps) {
       await pool.query(`
         INSERT INTO sequence_emails (sequence_id, step_number, subject, body, scheduled_at, delay_days, delay_hours)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
