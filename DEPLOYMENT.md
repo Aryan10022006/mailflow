@@ -132,14 +132,14 @@ cd mailflow
 
 If you copied the repo manually, place it at:
 
-- `/home/ubuntu/mailflow-backend`
-- `/home/ubuntu/mailflow-frontend`
+- `/home/ubuntu/mailflow/backend`
+- `/home/ubuntu/mailflow/frontend`
 
 ---
 
 ## 7) Configure the backend
 
-Create `/home/ubuntu/mailflow-backend/.env`:
+Create `/home/ubuntu/mailflow/backend/.env`:
 
 ```text
 DATABASE_URL=postgresql://mailflow_user:YOUR_DB_PASSWORD@localhost:5432/mailflow
@@ -156,7 +156,7 @@ PORT=4000
 Then install backend dependencies:
 
 ```bash
-cd /home/ubuntu/mailflow-backend
+cd /home/ubuntu/mailflow/backend
 npm install --production
 ```
 
@@ -169,7 +169,7 @@ node src/index.js
 If that starts cleanly, stop it and run it with PM2:
 
 ```bash
-pm2 start src/index.js --name mailflow-backend
+cd /home/ubuntu/mailflow/backend && pm2 start src/index.js --name mailflow-backend
 pm2 save
 pm2 startup systemd
 ```
@@ -189,8 +189,8 @@ curl http://localhost:4000/health
 Build the frontend with the backend API URL baked in:
 
 ```bash
-cd /home/ubuntu/mailflow-frontend
-echo "REACT_APP_API_URL=http://YOUR_EC2_PUBLIC_IP:4000/api" > .env
+cd /home/ubuntu/mailflow/frontend
+echo "REACT_APP_API_URL=/api" > .env
 npm install
 npm run build
 ```
@@ -206,7 +206,7 @@ server {
 	listen 80;
 	server_name YOUR_EC2_PUBLIC_IP;
 
-	root /home/ubuntu/mailflow-frontend/build;
+	root /home/ubuntu/mailflow/frontend/build;
 	index index.html;
 
 	location / {
@@ -236,6 +236,17 @@ sudo nginx -t
 sudo systemctl restart nginx
 sudo systemctl enable nginx
 ```
+
+If you get a 500 error after nginx reloads, check these first:
+
+```bash
+curl http://127.0.0.1:4000/health
+sudo tail -n 50 /var/log/nginx/error.log
+pm2 logs mailflow-backend --lines 50
+ls -l /home/ubuntu/mailflow/frontend/build/index.html
+```
+
+If `/health` fails, the backend is the problem. If `/health` works but nginx still returns 500, the nginx config or file permissions are the problem.
 
 ---
 
@@ -270,7 +281,18 @@ Because the backend runs on EC2 with PM2 and the server stays on, scheduled emai
 - Schema re-run if needed:
 
 ```bash
-sudo -u postgres psql -d mailflow -f /home/ubuntu/mailflow-backend/src/schema.sql
+sudo -u postgres psql -d mailflow -f /home/ubuntu/mailflow/backend/src/schema.sql
+```
+
+If `smtp_accounts` is still missing, run this exact order instead:
+
+```bash
+sudo -u postgres psql -d mailflow -c "CREATE TABLE IF NOT EXISTS smtp_accounts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id integer REFERENCES users(id) ON DELETE CASCADE, smtp_host varchar(255) NOT NULL, smtp_port integer NOT NULL, smtp_user varchar(255) NOT NULL, smtp_password text NOT NULL, display_name varchar(255), is_active boolean DEFAULT true, created_at timestamp DEFAULT NOW(), updated_at timestamp DEFAULT NOW());"
+sudo -u postgres psql -d mailflow -c "ALTER TABLE sequences ADD COLUMN IF NOT EXISTS smtp_account_id uuid REFERENCES smtp_accounts(id) ON DELETE SET NULL;"
+sudo -u postgres psql -d mailflow -c "\dt smtp_accounts"
+sudo -u postgres psql -d mailflow -c "\d sequences"
+pm2 restart mailflow-backend --update-env
+curl http://127.0.0.1:4000/health
 ```
 
 ---

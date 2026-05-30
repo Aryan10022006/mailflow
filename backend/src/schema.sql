@@ -16,14 +16,30 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- SMTP accounts used as alternate senders
+CREATE TABLE IF NOT EXISTS smtp_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  smtp_host VARCHAR(255) NOT NULL,
+  smtp_port INTEGER NOT NULL,
+  smtp_user VARCHAR(255) NOT NULL,
+  smtp_password TEXT NOT NULL,
+  display_name VARCHAR(255),
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Sequences table
 CREATE TABLE IF NOT EXISTS sequences (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id INTEGER REFERENCES users(id),
+  folder_id UUID,
   name VARCHAR(255) NOT NULL,
   send_delay_seconds INTEGER DEFAULT 7,
   status VARCHAR(50) DEFAULT 'draft', -- draft, active, paused, stopped, completed
   from_email VARCHAR(255),
+  smtp_account_id UUID REFERENCES smtp_accounts(id) ON DELETE SET NULL,
   csv_filename VARCHAR(255),
   csv_columns JSONB DEFAULT '[]'::jsonb,
   attachment_filename VARCHAR(255),
@@ -39,9 +55,30 @@ CREATE TABLE IF NOT EXISTS sequences (
   replied_count INTEGER DEFAULT 0,
   failed_count INTEGER DEFAULT 0,
   duplicated_from UUID,
+  trashed_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Folders table
+CREATE TABLE IF NOT EXISTS folders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  color VARCHAR(50) DEFAULT '#6c63ff',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS sequences
+  ADD COLUMN IF NOT EXISTS folder_id UUID;
+
+ALTER TABLE IF EXISTS sequences
+  ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMP;
+
+-- Add missing sequence columns to existing databases
+ALTER TABLE IF EXISTS sequences
+  ADD COLUMN IF NOT EXISTS smtp_account_id UUID REFERENCES smtp_accounts(id) ON DELETE SET NULL;
 
 -- Emails (steps) within a sequence
 CREATE TABLE IF NOT EXISTS sequence_emails (
