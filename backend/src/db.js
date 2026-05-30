@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Set Node.js process timezone to IST
-process.env.TZ = 'Asia/Calcutta';
+process.env.TZ = 'Asia/Kolkata';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -12,7 +12,7 @@ const pool = new Pool({
 
 // Set IST timezone on every new DB connection
 pool.on('connect', (client) => {
-  client.query("SET timezone='Asia/Calcutta'");
+  client.query("SET timezone='Asia/Kolkata'");
 });
 
 async function initDB() {
