@@ -25,10 +25,12 @@ async function createSmtpTransporter(account) {
 async function sendSmtpEmail({ account, to, from, senderName, subject, htmlBody, attachmentPath, attachmentFilename, replyToMessageId }) {
   const transporter = await createSmtpTransporter(account);
 
+  const effectiveSubject = replyToMessageId && subject && !/^re:\s*/i.test(subject) ? `Re: ${subject}` : subject;
+
   const mailOptions = {
     from: `${senderName} <${from}>`,
     to,
-    subject,
+    subject: effectiveSubject,
     html: htmlBody,
   };
 

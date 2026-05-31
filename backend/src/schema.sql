@@ -90,9 +90,13 @@ CREATE TABLE IF NOT EXISTS sequence_emails (
   scheduled_at TIMESTAMP, -- for step 1: exact datetime; for follow-ups: null (calculated from delay)
   delay_days INTEGER DEFAULT 0, -- delay from previous step (for follow-ups)
   delay_hours INTEGER DEFAULT 0,
+  delay_minutes INTEGER DEFAULT 0,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+
+ALTER TABLE IF EXISTS sequence_emails
+  ADD COLUMN IF NOT EXISTS delay_minutes INTEGER DEFAULT 0;
 
 -- Contacts imported from CSV
 CREATE TABLE IF NOT EXISTS contacts (

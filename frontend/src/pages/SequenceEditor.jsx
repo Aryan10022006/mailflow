@@ -39,7 +39,7 @@ export default function SequenceEditor() {
 
   // Emails state
   const [emails, setEmails] = useState([{
-    step_number: 1, subject: '', body: '', scheduled_at: '', delay_days: 0, delay_hours: 0
+    step_number: 1, subject: '', body: '', scheduled_at: '', delay_days: 0, delay_hours: 0, delay_minutes: 0
   }]);
 
   const MAX_FOLLOWUPS = 6;
@@ -76,7 +76,8 @@ export default function SequenceEditor() {
           body: e.body || '',
           scheduled_at: e.scheduled_at ? e.scheduled_at.slice(0, 16) : '',
           delay_days: e.delay_days || 0,
-          delay_hours: e.delay_hours || 0
+          delay_hours: e.delay_hours || 0,
+          delay_minutes: e.delay_minutes || 0
         })));
       }
       setAliases(aliasRes.data || []);
@@ -152,7 +153,7 @@ export default function SequenceEditor() {
       return;
     }
     setEmails(prev => [...prev, {
-      step_number: prev.length + 1, subject: '', body: '', scheduled_at: '', delay_days: 3, delay_hours: 0
+      step_number: prev.length + 1, subject: '', body: '', scheduled_at: '', delay_days: 3, delay_hours: 0, delay_minutes: 0
     }]);
   };
 
@@ -427,7 +428,7 @@ export default function SequenceEditor() {
                           <div className="form-hint">When to send the initial email</div>
                         </div>
                       ) : (
-                        <div className="grid-2" style={{ marginBottom: 16 }}>
+                            <div className="grid-3" style={{ marginBottom: 16 }}>
                           <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label">Delay (Days)</label>
                             <input type="number" className="input" min="0" value={email.delay_days}
@@ -438,8 +439,13 @@ export default function SequenceEditor() {
                             <input type="number" className="input" min="0" max="23" value={email.delay_hours}
                               onChange={e => updateEmail(idx, 'delay_hours', parseInt(e.target.value) || 0)} />
                           </div>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Delay (Minutes)</label>
+                            <input type="number" className="input" min="0" max="59" value={email.delay_minutes}
+                              onChange={e => updateEmail(idx, 'delay_minutes', parseInt(e.target.value) || 0)} />
+                          </div>
                           <div className="form-hint" style={{ gridColumn: '1/-1' }}>
-                            Sent {email.delay_days}d {email.delay_hours}h after previous email — only if no reply received
+                            Sent {email.delay_days}d {email.delay_hours}h {email.delay_minutes}m after previous email — only if no reply received
                           </div>
                         </div>
                       )}

@@ -1,6 +1,6 @@
 const { google } = require('googleapis');
 const { getAuthenticatedClient, getSendAsAliases } = require('./gmail');
-const { sendSmtpEmail } = require('./smtpSender');
+const { sendSmtpEmail, getSmtpAccounts } = require('./smtpSender');
 const { pool } = require('../db');
 const path = require('path');
 const fs = require('fs');
@@ -27,10 +27,11 @@ async function buildMimeMessage({ to, from, senderName, subject, htmlBody, attac
     trackedBody += `<img src="${pixelUrl}" width="1" height="1" style="display:none" />`;
   }
   const hasAttachment = attachmentPath && fs.existsSync(attachmentPath);
+  const effectiveSubject = replyToMessageId && subject && !/^re:\s*/i.test(subject) ? `Re: ${subject}` : subject;
   let messageParts = [
     `From: ${senderName} <${from}>`,
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${effectiveSubject}`,
     `MIME-Version: 1.0`,
   ];
   if (replyToMessageId) {
@@ -65,23 +66,83 @@ async function buildMimeMessage({ to, from, senderName, subject, htmlBody, attac
 }
 
 async function sendEmail(userId, sendData) {
-  const { to, from, senderName, subject, htmlBody, attachmentPath, attachmentFilename, attachmentMimetype, trackingPixelId, includeTracking, threadId, replyToMessageId } = sendData;
+  const { to, from, senderName, subject, htmlBody, attachmentPath, attachmentFilename, attachmentMimetype, trackingPixelId, includeTracking, threadId, replyToMessageId, sequenceId } = sendData;
   const auth = await getAuthenticatedClient(userId);
   const gmail = google.gmail({ version: 'v1', auth });
-  const raw = await buildMimeMessage({ to, from, senderName, subject, htmlBody, attachmentPath, attachmentFilename, attachmentMimetype, trackingPixelId, includeTracking, replyToMessageId });
-  const params = { userId: 'me', requestBody: { raw } };
-  if (threadId) params.requestBody.threadId = threadId;
-  const response = await gmail.users.messages.send(params);
 
-  // Fetch RFC Message-ID for proper threading
-  let rfcMessageId = response.data.id;
+  const { rows: userRows } = await pool.query('SELECT gmail_email FROM users WHERE id = $1', [userId]);
+  const gmailEmail = userRows[0]?.gmail_email;
+  const aliases = await getSendAsAliases(userId).catch(() => []);
+  const requestedFrom = from || gmailEmail;
+  const validAlias = aliases.find(a => a.sendAsEmail === requestedFrom);
+  const safeFrom = validAlias ? requestedFrom : gmailEmail || requestedFrom;
+  const safeSenderName = senderName || validAlias?.displayName || safeFrom;
+
+  const raw = await buildMimeMessage({
+    to,
+    from: safeFrom,
+    senderName: safeSenderName,
+    subject,
+    htmlBody,
+    attachmentPath,
+    attachmentFilename,
+    attachmentMimetype,
+    trackingPixelId,
+    includeTracking,
+    replyToMessageId
+  });
+
+  const sendViaGmail = async () => {
+    const params = { userId: 'me', requestBody: { raw } };
+    if (threadId) params.requestBody.threadId = threadId;
+    const response = await gmail.users.messages.send(params);
+
+    // Fetch RFC Message-ID for proper threading
+    let rfcMessageId = response.data.id;
+    try {
+      const msg = await gmail.users.messages.get({ userId: 'me', id: response.data.id, format: 'metadata', metadataHeaders: ['Message-ID'] });
+      const msgIdHeader = msg.data.payload?.headers?.find(h => h.name === 'Message-ID');
+      if (msgIdHeader?.value) rfcMessageId = msgIdHeader.value;
+    } catch (e) {}
+
+    return { messageId: rfcMessageId, threadId: response.data.threadId, transport: 'gmail' };
+  };
+
+  const isRejected = (err) => {
+    const message = `${err?.message || ''} ${err?.response?.data?.error?.message || ''} ${err?.response?.data?.error_description || ''}`.toLowerCase();
+    return message.includes('message rejected') || message.includes('blocked') || message.includes('invalid_request') || message.includes('rejected');
+  };
+
   try {
-    const msg = await gmail.users.messages.get({ userId: 'me', id: response.data.id, format: 'metadata', metadataHeaders: ['Message-ID'] });
-    const msgIdHeader = msg.data.payload?.headers?.find(h => h.name === 'Message-ID');
-    if (msgIdHeader?.value) rfcMessageId = msgIdHeader.value;
-  } catch (e) {}
+    return await sendViaGmail();
+  } catch (err) {
+    if (!isRejected(err)) throw err;
 
-  return { messageId: rfcMessageId, threadId: response.data.threadId };
+    const fallbackAccounts = sequenceId ? await getSmtpAccounts(userId).catch(() => []) : [];
+    const fallbackAccount = fallbackAccounts[0];
+    if (!fallbackAccount) throw err;
+
+    const smtpResult = await sendSmtpEmail({
+      account: fallbackAccount,
+      to,
+      from: fallbackAccount.smtp_user,
+      senderName: fallbackAccount.display_name || fallbackAccount.smtp_user,
+      subject,
+      htmlBody,
+      attachmentPath,
+      attachmentFilename,
+      replyToMessageId: replyToMessageId || threadId || null
+    });
+
+    if (sequenceId) {
+      await pool.query(
+        'UPDATE sequences SET smtp_account_id = $1, from_email = NULL, updated_at = NOW() WHERE id = $2',
+        [fallbackAccount.id, sequenceId]
+      );
+    }
+
+    return { messageId: smtpResult.messageId, threadId: smtpResult.threadId, transport: 'smtp-fallback' };
+  }
 }
 
 async function processDueEmails() {
@@ -191,6 +252,7 @@ async function processDueEmails() {
                 if (alias?.displayName) senderName = alias.displayName;
               } catch (e) {}
               result = await sendEmail(parseInt(userId), {
+                sequenceId: send.sequence_id,
                 to: send.contact_email,
                 from: send.from_email || send.gmail_email,
                 senderName, subject, htmlBody,
@@ -264,7 +326,7 @@ async function scheduleNextFollowUp(client, completedSend, threadId, rfcMessageI
     return;
   }
   const next = nextEmail[0];
-  const delayInterval = `${next.delay_days || 0} days ${next.delay_hours || 0} hours`;
+  const delayInterval = `${next.delay_days || 0} days ${next.delay_hours || 0} hours ${next.delay_minutes || 0} minutes`;
   await client.query(`
     INSERT INTO email_sends (sequence_id, contact_id, sequence_email_id, step_number, to_email, status, scheduled_at, gmail_thread_id, gmail_message_id)
     VALUES ($1, $2, $3, $4, $5, 'scheduled', NOW() + $6::interval, $7, $8)

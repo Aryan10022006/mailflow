@@ -214,7 +214,7 @@ router.delete('/:id/attachment', authMiddleware, async (req, res) => {
 // Save email steps
 router.put('/:id/emails', authMiddleware, async (req, res) => {
   try {
-    const { emails } = req.body; // array of { step_number, subject, body, scheduled_at, delay_days, delay_hours }
+    const { emails } = req.body; // array of { step_number, subject, body, scheduled_at, delay_days, delay_hours, delay_minutes }
 
     if (!Array.isArray(emails) || emails.length === 0) {
       return res.status(400).json({ error: 'At least one email step is required' });
@@ -236,9 +236,9 @@ router.put('/:id/emails', authMiddleware, async (req, res) => {
     
     for (const email of sortedSteps) {
       await pool.query(`
-        INSERT INTO sequence_emails (sequence_id, step_number, subject, body, scheduled_at, delay_days, delay_hours)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [req.params.id, email.step_number, email.subject, email.body, email.scheduled_at || null, email.delay_days || 0, email.delay_hours || 0]);
+        INSERT INTO sequence_emails (sequence_id, step_number, subject, body, scheduled_at, delay_days, delay_hours, delay_minutes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [req.params.id, email.step_number, email.subject, email.body, email.scheduled_at || null, email.delay_days || 0, email.delay_hours || 0, email.delay_minutes || 0]);
     }
     res.json({ success: true });
   } catch (err) {
@@ -360,9 +360,9 @@ router.post('/:id/duplicate', authMiddleware, async (req, res) => {
     const { rows: emails } = await pool.query('SELECT * FROM sequence_emails WHERE sequence_id = $1 ORDER BY step_number', [req.params.id]);
     for (const email of emails) {
       await pool.query(`
-        INSERT INTO sequence_emails (sequence_id, step_number, subject, body, scheduled_at, delay_days, delay_hours)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [newSeq[0].id, email.step_number, email.subject, email.body, null, email.delay_days, email.delay_hours]);
+        INSERT INTO sequence_emails (sequence_id, step_number, subject, body, scheduled_at, delay_days, delay_hours, delay_minutes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [newSeq[0].id, email.step_number, email.subject, email.body, null, email.delay_days, email.delay_hours, email.delay_minutes || 0]);
       // Note: scheduled_at is cleared on duplicate so user must reschedule
     }
 
@@ -500,6 +500,7 @@ router.post('/:id/force-send', authMiddleware, async (req, res) => {
       } catch (e) { /* use email as fallback */ }
 
       result = await sendEmail(req.userId, {
+        sequenceId: send.sequence_id,
         to: send.contact_email,
         from: send.from_email || send.gmail_email,
         senderName,
