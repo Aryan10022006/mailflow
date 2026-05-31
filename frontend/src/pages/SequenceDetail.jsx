@@ -22,6 +22,11 @@ function getSendStatus(send) {
   return SEND_STATUS[send.status] || { label: send.status, cls: 'badge-draft' };
 }
 
+function getSeenBadge(send) {
+  if (!send?.opened_at) return null;
+  return { label: 'Seen', cls: 'badge-opened' };
+}
+
 export default function SequenceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -358,6 +363,7 @@ export default function SequenceDetail() {
                                 onMouseEnter={e => showTooltip(e, step1, step1, 1, c.data)}
                                 onMouseLeave={hideTooltip}>
                                 <span className={`badge ${getSendStatus(step1).cls}`}>{getSendStatus(step1).label}</span>
+                                {getSeenBadge(step1) && <span className={`badge ${getSeenBadge(step1).cls}`} style={{ fontSize: 11 }}>Seen</span>}
                                 {step1.status === 'scheduled' && (
                                   <button onClick={() => forceSend(c.id, 1)} title="Send now" style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>⚡ Now</button>
                                 )}
@@ -370,6 +376,7 @@ export default function SequenceDetail() {
                                 onMouseEnter={e => showTooltip(e, step2, step2, 2, c.data)}
                                 onMouseLeave={hideTooltip}>
                                 <span className={`badge ${getSendStatus(step2).cls}`}>{getSendStatus(step2).label}</span>
+                                {getSeenBadge(step2) && <span className={`badge ${getSeenBadge(step2).cls}`} style={{ fontSize: 11 }}>Seen</span>}
                                 {step2.status === 'scheduled' && (
                                   <button onClick={() => forceSend(c.id, 2)} title="Send now" style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>⚡ Now</button>
                                 )}
@@ -382,6 +389,7 @@ export default function SequenceDetail() {
                                 onMouseEnter={e => showTooltip(e, step3, step3, 3, c.data)}
                                 onMouseLeave={hideTooltip}>
                                 <span className={`badge ${getSendStatus(step3).cls}`}>{getSendStatus(step3).label}</span>
+                                {getSeenBadge(step3) && <span className={`badge ${getSeenBadge(step3).cls}`} style={{ fontSize: 11 }}>Seen</span>}
                                 {step3.status === 'scheduled' && (
                                   <button onClick={() => forceSend(c.id, 3)} title="Send now" style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>⚡ Now</button>
                                 )}
