@@ -28,8 +28,18 @@ async function buildMimeMessage({ to, from, senderName, subject, htmlBody, attac
   }
   const hasAttachment = attachmentPath && fs.existsSync(attachmentPath);
   const effectiveSubject = replyToMessageId && subject && !/^re:\s*/i.test(subject) ? `Re: ${subject}` : subject;
+
+  const quoteName = (name) => {
+    if (!name) return name || '';
+    // If name contains special chars (comma, <, >, \"), quote and escape any quotes/backslashes
+    const needsQuote = /[(),:\\"<>@;\/\[\]]|\s,/.test(name) || name.includes(',');
+    const escaped = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return needsQuote ? `"${escaped}"` : escaped;
+  };
+
+  const fromHeaderName = quoteName(senderName || '');
   let messageParts = [
-    `From: ${senderName} <${from}>`,
+    `From: ${fromHeaderName} <${from}>`,
     `To: ${to}`,
     `Subject: ${effectiveSubject}`,
     `MIME-Version: 1.0`,

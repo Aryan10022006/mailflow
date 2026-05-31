@@ -28,7 +28,7 @@ async function sendSmtpEmail({ account, to, from, senderName, subject, htmlBody,
   const effectiveSubject = replyToMessageId && subject && !/^re:\s*/i.test(subject) ? `Re: ${subject}` : subject;
 
   const mailOptions = {
-    from: `${senderName} <${from}>`,
+    from: { name: senderName, address: from },
     to,
     subject: effectiveSubject,
     html: htmlBody,
