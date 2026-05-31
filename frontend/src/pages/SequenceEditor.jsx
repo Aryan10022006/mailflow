@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -41,6 +41,9 @@ export default function SequenceEditor() {
   const [emails, setEmails] = useState([{
     step_number: 1, subject: '', body: '', scheduled_at: '', delay_days: 0, delay_hours: 0, delay_minutes: 0
   }]);
+
+  const subjectRefs = useRef([]);
+  const [pickerOpen, setPickerOpen] = useState(null);
 
   const MAX_FOLLOWUPS = 6;
   const MAX_TOTAL_EMAILS = MAX_FOLLOWUPS + 1;
@@ -163,6 +166,25 @@ export default function SequenceEditor() {
 
   const updateEmail = (idx, field, value) => {
     setEmails(prev => prev.map((e, i) => i === idx ? { ...e, [field]: value } : e));
+  };
+
+  const insertVariable = (idx, col) => {
+    const ref = subjectRefs.current[idx];
+    const placeholder = `{{${col}}}`;
+    const current = emails[idx]?.subject || '';
+    if (ref) {
+      const start = typeof ref.selectionStart === 'number' ? ref.selectionStart : current.length;
+      const end = typeof ref.selectionEnd === 'number' ? ref.selectionEnd : start;
+      const newVal = current.slice(0, start) + placeholder + current.slice(end);
+      updateEmail(idx, 'subject', newVal);
+      // restore focus and caret after update
+      setTimeout(() => {
+        try { ref.focus(); ref.setSelectionRange(start + placeholder.length, start + placeholder.length); } catch (e) {}
+      }, 0);
+    } else {
+      updateEmail(idx, 'subject', current + placeholder);
+    }
+    setPickerOpen(null);
   };
 
   const launch = async () => {
@@ -453,9 +475,31 @@ export default function SequenceEditor() {
                       {/* Subject */}
                       <div className="form-group">
                         <label className="form-label">Subject</label>
-                        <input className="input" value={email.subject}
-                          onChange={e => updateEmail(idx, 'subject', e.target.value)}
-                          placeholder={idx === 0 ? 'e.g. Internship Application — {{name}}' : `Re: ${emails[0]?.subject || 'your email'}`} />
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input
+                            ref={el => subjectRefs.current[idx] = el}
+                            className="input"
+                            style={{ flex: 1 }}
+                            value={email.subject}
+                            onChange={e => updateEmail(idx, 'subject', e.target.value)}
+                            placeholder={idx === 0 ? 'e.g. Internship Application — {{name}}' : `Re: ${emails[0]?.subject || 'your email'}`}
+                          />
+                          <div style={{ position: 'relative' }}>
+                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPickerOpen(p => p === idx ? null : idx)} disabled={csvColumns.length === 0}>Vars</button>
+                            {pickerOpen === idx && csvColumns.length > 0 && (
+                              <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--bg)', border: '1px solid var(--border)', padding: 8, borderRadius: 6, zIndex: 30, minWidth: 180 }}>
+                                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>Insert variable</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                  {csvColumns.map(c => (
+                                    <button key={c} type="button" className="btn btn-sm btn-secondary" onClick={() => insertVariable(idx, c)}>
+                                      {`{{${c}}}`}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
                       {/* Body */}
