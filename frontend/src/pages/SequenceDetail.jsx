@@ -122,6 +122,27 @@ export default function SequenceDetail() {
 
   if (loading) return <div className="page-loader"><div className="spinner" /></div>;
 
+  const stopContact = async (contactId, email) => {
+    if (!window.confirm(`Stop sending emails to ${email}?`)) return;
+    try {
+      await api.post(`/sequences/${id}/contacts/${contactId}/stop`);
+      toast.success(`Stopped emails to ${email}`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to stop contact');
+    }
+  };
+
+  const resumeContact = async (contactId, email) => {
+    try {
+      const res = await api.post(`/sequences/${id}/contacts/${contactId}/resume`);
+      toast.success(res.data.message || `Resumed ${email} from step ${res.data.nextStep}`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to resume contact');
+    }
+  };
+
   const forceSend = async (contactId, stepNumber) => {
     if (!window.confirm('Send this email now immediately?')) return;
     try {
@@ -332,6 +353,7 @@ export default function SequenceDetail() {
                       <th>Step 2</th>
                       <th>Step 3</th>
                       <th>Last Activity</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -410,6 +432,23 @@ export default function SequenceDetail() {
                               }
                               return '—';
                             })()}
+                          </td>
+                          <td>
+                            {c.status === 'stopped' ? (
+                              <button
+                                onClick={() => resumeContact(c.id, c.email)}
+                                style={{ background: 'var(--green, #22c55e)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                title="Resume sending to this contact">
+                                ▶ Resume
+                              </button>
+                            ) : ['active', 'pending'].includes(c.status) ? (
+                              <button
+                                onClick={() => stopContact(c.id, c.email)}
+                                style={{ background: 'var(--red, #ef4444)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                title="Stop all future emails to this contact">
+                                ⏹ Stop
+                              </button>
+                            ) : null}
                           </td>
                         </tr>
                       );

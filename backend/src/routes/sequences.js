@@ -546,6 +546,79 @@ router.post('/:id/force-send', authMiddleware, async (req, res) => {
   }
 });
 
+// Stop a single contact (skip their remaining emails)
+router.post('/:id/contacts/:contactId/stop', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT c.* FROM contacts c
+      JOIN sequences seq ON c.sequence_id = seq.id
+      WHERE c.id = $1 AND c.sequence_id = $2 AND seq.user_id = $3
+    `, [req.params.contactId, req.params.id, req.userId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Contact not found' });
+
+    const { rowCount } = await pool.query(
+      `UPDATE email_sends SET status = 'skipped' WHERE contact_id = $1 AND status = 'scheduled'`,
+      [req.params.contactId]
+    );
+    await pool.query(`UPDATE contacts SET status = 'stopped' WHERE id = $1`, [req.params.contactId]);
+    await pool.query(`
+      INSERT INTO activity_log (sequence_id, contact_id, event_type, description)
+      VALUES ($1, $2, 'contact_stopped', $3)
+    `, [req.params.id, req.params.contactId,
+        `${rows[0].email} manually stopped. ${rowCount} scheduled email(s) cancelled.`]);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Resume a stopped contact — schedules the next unsent step immediately
+router.post('/:id/contacts/:contactId/resume', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT c.* FROM contacts c
+      JOIN sequences seq ON c.sequence_id = seq.id
+      WHERE c.id = $1 AND c.sequence_id = $2 AND seq.user_id = $3
+    `, [req.params.contactId, req.params.id, req.userId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Contact not found' });
+    const contact = rows[0];
+
+    const nextStep = (contact.current_step || 0) + 1;
+    const { rows: nextEmails } = await pool.query(
+      `SELECT * FROM sequence_emails WHERE sequence_id = $1 AND step_number = $2`,
+      [req.params.id, nextStep]
+    );
+    if (nextEmails.length === 0) {
+      await pool.query(`UPDATE contacts SET status = 'completed' WHERE id = $1`, [req.params.contactId]);
+      return res.json({ success: true, message: 'No more steps — marked completed' });
+    }
+
+    // Grab thread/message IDs from last sent email for threading continuity
+    const { rows: lastSent } = await pool.query(`
+      SELECT gmail_thread_id, gmail_message_id FROM email_sends
+      WHERE contact_id = $1 AND status = 'sent'
+      ORDER BY step_number DESC LIMIT 1
+    `, [req.params.contactId]);
+
+    await pool.query(`
+      INSERT INTO email_sends (sequence_id, contact_id, sequence_email_id, step_number, to_email, status, scheduled_at, gmail_thread_id, gmail_message_id)
+      VALUES ($1, $2, $3, $4, $5, 'scheduled', NOW(), $6, $7)
+    `, [req.params.id, req.params.contactId, nextEmails[0].id, nextStep, contact.email,
+        lastSent[0]?.gmail_thread_id || null, lastSent[0]?.gmail_message_id || null]);
+
+    await pool.query(`UPDATE contacts SET status = 'active' WHERE id = $1`, [req.params.contactId]);
+    await pool.query(`
+      INSERT INTO activity_log (sequence_id, contact_id, event_type, description)
+      VALUES ($1, $2, 'contact_resumed', $3)
+    `, [req.params.id, req.params.contactId, `${contact.email} resumed at step ${nextStep}.`]);
+
+    res.json({ success: true, nextStep });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Delete sequence
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {

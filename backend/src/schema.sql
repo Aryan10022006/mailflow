@@ -141,6 +141,12 @@ CREATE TABLE IF NOT EXISTS activity_log (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Add IMAP fields to smtp_accounts for reply detection
+ALTER TABLE IF EXISTS smtp_accounts
+  ADD COLUMN IF NOT EXISTS imap_host VARCHAR(255);
+ALTER TABLE IF EXISTS smtp_accounts
+  ADD COLUMN IF NOT EXISTS imap_port INTEGER DEFAULT 993;
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_email_sends_status ON email_sends(status);
 CREATE INDEX IF NOT EXISTS idx_email_sends_scheduled_at ON email_sends(scheduled_at);
