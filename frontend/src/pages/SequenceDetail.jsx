@@ -343,26 +343,29 @@ export default function SequenceDetail() {
                   <button className="btn btn-sm btn-ghost" onClick={clearSelection}>Clear</button>
                 </>}
               </div>
-              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <table className="table">
+              <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+                <table className="table" style={{ minWidth: 700 }}>
                   <thead>
                     <tr>
-                      <th>Email</th>
-                      <th>Status</th>
-                      <th>Step 1</th>
-                      <th>Step 2</th>
-                      <th>Step 3</th>
-                      <th>Last Activity</th>
-                      <th>Actions</th>
+                      <th style={{ minWidth: 200 }}>Email</th>
+                      <th style={{ minWidth: 90 }}>Status</th>
+                      <th style={{ minWidth: 260 }}>
+                        <div>Steps {seqEmails.length > 0 && <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text3)' }}>({seqEmails.length} — hover to preview)</span>}</div>
+                        <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--text3)', marginTop: 2, display: 'flex', gap: 6 }}>
+                          <span style={{ color: '#22c55e' }}>■ sent</span>
+                          <span style={{ color: '#f59e0b' }}>■ opened</span>
+                          <span style={{ color: 'var(--accent, #6c63ff)' }}>■ scheduled</span>
+                          <span style={{ color: '#ef4444' }}>■ failed</span>
+                          <span style={{ color: '#6b7280' }}>■ skipped</span>
+                        </div>
+                      </th>
+                      <th style={{ minWidth: 150 }}>Last Activity</th>
+                      <th style={{ minWidth: 90 }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredContacts.map(c => {
                       const sends = c.sends || [];
-                      const step1 = sends.find(s => s.step === 1);
-                      const step2 = sends.find(s => s.step === 2);
-                      const step3 = sends.find(s => s.step === 3);
-                      const lastSend = sends.filter(s => s.sent_at).sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
 
                       return (
                         <tr key={c.id}>
@@ -380,43 +383,44 @@ export default function SequenceDetail() {
                           </td>
                           <td><span className={`badge ${STATUS_COLORS[c.status] || 'badge-draft'}`}>{c.status}</span></td>
                           <td>
-                            {step1 ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                                onMouseEnter={e => showTooltip(e, step1, step1, 1, c.data)}
-                                onMouseLeave={hideTooltip}>
-                                <span className={`badge ${getSendStatus(step1).cls}`}>{getSendStatus(step1).label}</span>
-                                {getSeenBadge(step1) && <span className={`badge ${getSeenBadge(step1).cls}`} style={{ fontSize: 11 }}>Seen</span>}
-                                {step1.status === 'scheduled' && (
-                                  <button onClick={() => forceSend(c.id, 1)} title="Send now" style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>⚡ Now</button>
-                                )}
-                              </div>
-                            ) : <span className="text-xs">—</span>}
-                          </td>
-                          <td>
-                            {step2 ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                                onMouseEnter={e => showTooltip(e, step2, step2, 2, c.data)}
-                                onMouseLeave={hideTooltip}>
-                                <span className={`badge ${getSendStatus(step2).cls}`}>{getSendStatus(step2).label}</span>
-                                {getSeenBadge(step2) && <span className={`badge ${getSeenBadge(step2).cls}`} style={{ fontSize: 11 }}>Seen</span>}
-                                {step2.status === 'scheduled' && (
-                                  <button onClick={() => forceSend(c.id, 2)} title="Send now" style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>⚡ Now</button>
-                                )}
-                              </div>
-                            ) : <span className="text-xs">—</span>}
-                          </td>
-                          <td>
-                            {step3 ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                                onMouseEnter={e => showTooltip(e, step3, step3, 3, c.data)}
-                                onMouseLeave={hideTooltip}>
-                                <span className={`badge ${getSendStatus(step3).cls}`}>{getSendStatus(step3).label}</span>
-                                {getSeenBadge(step3) && <span className={`badge ${getSeenBadge(step3).cls}`} style={{ fontSize: 11 }}>Seen</span>}
-                                {step3.status === 'scheduled' && (
-                                  <button onClick={() => forceSend(c.id, 3)} title="Send now" style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>⚡ Now</button>
-                                )}
-                              </div>
-                            ) : <span className="text-xs">—</span>}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'flex-start' }}>
+                              {seqEmails.map(emailMeta => {
+                                const send = sends.find(s => s.step === emailMeta.step_number);
+                                const dotColor = !send ? '#374151'
+                                  : send.opened_at ? '#f59e0b'
+                                  : send.status === 'sent' ? '#22c55e'
+                                  : send.status === 'scheduled' ? 'var(--accent, #6c63ff)'
+                                  : send.status === 'failed' ? '#ef4444'
+                                  : '#6b7280';
+                                return (
+                                  <div key={emailMeta.step_number} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                                    <div
+                                      onMouseEnter={e => send && showTooltip(e, send, send, emailMeta.step_number, c.data)}
+                                      onMouseLeave={hideTooltip}
+                                      style={{
+                                        width: 26, height: 26, borderRadius: 5,
+                                        background: dotColor,
+                                        border: !send ? '1px dashed #4b5563' : 'none',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        cursor: send ? 'pointer' : 'default',
+                                        fontSize: 11, color: '#fff', fontWeight: 700,
+                                        flexShrink: 0,
+                                      }}
+                                      title={`Step ${emailMeta.step_number}: ${send ? getSendStatus(send).label : 'Not yet scheduled'}`}
+                                    >
+                                      {emailMeta.step_number}
+                                    </div>
+                                    {send?.status === 'scheduled' && (
+                                      <button
+                                        onClick={() => forceSend(c.id, emailMeta.step_number)}
+                                        title="Send now"
+                                        style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 5px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+                                      >⚡</button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </td>
                           <td className="text-xs">
                             {(() => {
