@@ -11,6 +11,7 @@ const STATUS_COLORS = {
 const SEND_STATUS = {
   sent: { label: 'Sent', cls: 'badge-sent' },
   scheduled: { label: 'Scheduled', cls: 'badge-scheduled' },
+  paused: { label: 'Paused', cls: 'badge-paused' },
   failed: { label: 'Failed', cls: 'badge-failed' },
   skipped: { label: 'Skipped', cls: 'badge-skipped' },
   opened: { label: 'Opened', cls: 'badge-opened' },
@@ -143,6 +144,67 @@ export default function SequenceDetail() {
     }
   };
 
+  const pauseContact = async (contactId, email) => {
+    try {
+      await api.post(`/sequences/${id}/contacts/${contactId}/pause`);
+      toast.success(`Paused follow-ups for ${email}`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to pause contact');
+    }
+  };
+
+  const unpauseContact = async (contactId, email) => {
+    try {
+      await api.post(`/sequences/${id}/contacts/${contactId}/unpause`);
+      toast.success(`Resumed follow-ups for ${email}`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to resume contact');
+    }
+  };
+
+  const pauseSend = async (contactId, stepNumber) => {
+    try {
+      await api.post(`/sequences/${id}/contacts/${contactId}/sends/${stepNumber}/pause`);
+      toast.success(`Step ${stepNumber} paused`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to pause email');
+    }
+  };
+
+  const unpauseSend = async (contactId, stepNumber) => {
+    try {
+      await api.post(`/sequences/${id}/contacts/${contactId}/sends/${stepNumber}/unpause`);
+      toast.success(`Step ${stepNumber} resumed`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to resume email');
+    }
+  };
+
+  const skipSend = async (contactId, stepNumber) => {
+    if (!window.confirm(`Cancel email for step ${stepNumber}?`)) return;
+    try {
+      await api.post(`/sequences/${id}/contacts/${contactId}/sends/${stepNumber}/skip`);
+      toast.success(`Step ${stepNumber} cancelled`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to cancel email');
+    }
+  };
+
+  const unskipSend = async (contactId, stepNumber) => {
+    try {
+      await api.post(`/sequences/${id}/contacts/${contactId}/sends/${stepNumber}/unskip`);
+      toast.success(`Step ${stepNumber} restored`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to restore email');
+    }
+  };
+
   const forceSend = async (contactId, stepNumber) => {
     if (!window.confirm('Send this email now immediately?')) return;
     try {
@@ -254,7 +316,9 @@ export default function SequenceDetail() {
   const EVENT_ICONS = {
     email_sent: '📤', email_opened: '👁', reply_detected: '💬',
     followup_skipped: '⏭', limit_reached: '⚠️', sequence_launched: '🚀',
-    sequence_paused: '⏸', sequence_stopped: '⏹', sequence_resumed: '▶'
+    sequence_paused: '⏸', sequence_stopped: '⏹', sequence_resumed: '▶',
+    contact_paused: '⏸', contact_unpaused: '▶', contact_stopped: '⏹', contact_resumed: '▶',
+    send_paused: '⏸', send_unpaused: '▶', send_skipped: '⏹', send_unskipped: '↺'
   };
 
   return (
@@ -319,7 +383,7 @@ export default function SequenceDetail() {
           <div>
             {/* Filter */}
             <div className="flex-center gap-8" style={{ marginBottom: 16 }}>
-              {['all', 'active', 'replied', 'completed', 'stopped'].map(f => (
+              {['all', 'active', 'paused', 'replied', 'completed', 'stopped'].map(f => (
                 <button key={f} className={`btn btn-sm ${filter === f ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setFilter(f)}>
                   {f === 'all' ? `All (${contacts.length})` : f}
@@ -351,10 +415,11 @@ export default function SequenceDetail() {
                       <th style={{ minWidth: 90 }}>Status</th>
                       <th style={{ minWidth: 260 }}>
                         <div>Steps {seqEmails.length > 0 && <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text3)' }}>({seqEmails.length} — hover to preview)</span>}</div>
-                        <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--text3)', marginTop: 2, display: 'flex', gap: 6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--text3)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <span style={{ color: '#22c55e' }}>■ sent</span>
                           <span style={{ color: '#f59e0b' }}>■ opened</span>
                           <span style={{ color: 'var(--accent, #6c63ff)' }}>■ scheduled</span>
+                          <span style={{ color: '#a78bfa' }}>■ paused</span>
                           <span style={{ color: '#ef4444' }}>■ failed</span>
                           <span style={{ color: '#6b7280' }}>■ skipped</span>
                         </div>
@@ -390,6 +455,7 @@ export default function SequenceDetail() {
                                   : send.opened_at ? '#f59e0b'
                                   : send.status === 'sent' ? '#22c55e'
                                   : send.status === 'scheduled' ? 'var(--accent, #6c63ff)'
+                                  : send.status === 'paused' ? '#a78bfa'
                                   : send.status === 'failed' ? '#ef4444'
                                   : '#6b7280';
                                 return (
@@ -410,13 +476,48 @@ export default function SequenceDetail() {
                                     >
                                       {emailMeta.step_number}
                                     </div>
-                                    {send?.status === 'scheduled' && (
-                                      <button
-                                        onClick={() => forceSend(c.id, emailMeta.step_number)}
-                                        title="Send now"
-                                        style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 5px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
-                                      >⚡</button>
-                                    )}
+                                    <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                      {send?.status === 'scheduled' && (
+                                        <>
+                                          <button
+                                            onClick={() => forceSend(c.id, emailMeta.step_number)}
+                                            title="Send now"
+                                            style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+                                          >⚡</button>
+                                          <button
+                                            onClick={() => pauseSend(c.id, emailMeta.step_number)}
+                                            title="Pause this email"
+                                            style={{ background: '#a78bfa', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+                                          >⏸</button>
+                                          <button
+                                            onClick={() => skipSend(c.id, emailMeta.step_number)}
+                                            title="Cancel this email"
+                                            style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+                                          >⏹</button>
+                                        </>
+                                      )}
+                                      {send?.status === 'paused' && (
+                                        <>
+                                          <button
+                                            onClick={() => unpauseSend(c.id, emailMeta.step_number)}
+                                            title="Resume this email"
+                                            style={{ background: 'var(--green, #22c55e)', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+                                          >▶</button>
+                                          <button
+                                            onClick={() => skipSend(c.id, emailMeta.step_number)}
+                                            title="Cancel this email"
+                                            style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+                                          >⏹</button>
+                                        </>
+                                      )}
+                                      {send?.status === 'skipped' && send.scheduled_at && (
+                                        <button
+                                          onClick={() => unskipSend(c.id, emailMeta.step_number)}
+                                          title="Restore this email"
+                                          style={{ background: 'var(--green, #22c55e)', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+                                        >↺</button>
+                                      )}
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -438,21 +539,38 @@ export default function SequenceDetail() {
                             })()}
                           </td>
                           <td>
-                            {c.status === 'stopped' ? (
-                              <button
-                                onClick={() => resumeContact(c.id, c.email)}
-                                style={{ background: 'var(--green, #22c55e)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                                title="Resume sending to this contact">
-                                ▶ Resume
-                              </button>
-                            ) : ['active', 'pending'].includes(c.status) ? (
-                              <button
-                                onClick={() => stopContact(c.id, c.email)}
-                                style={{ background: 'var(--red, #ef4444)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                                title="Stop all future emails to this contact">
-                                ⏹ Stop
-                              </button>
-                            ) : null}
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {c.status === 'stopped' ? (
+                                <button
+                                  onClick={() => resumeContact(c.id, c.email)}
+                                  style={{ background: 'var(--green, #22c55e)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                  title="Resume sending to this contact">
+                                  ▶ Resume
+                                </button>
+                              ) : c.status === 'paused' ? (
+                                <button
+                                  onClick={() => unpauseContact(c.id, c.email)}
+                                  style={{ background: 'var(--green, #22c55e)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                  title="Resume follow-ups for this contact">
+                                  ▶ Unpause
+                                </button>
+                              ) : ['active', 'pending'].includes(c.status) ? (
+                                <>
+                                  <button
+                                    onClick={() => pauseContact(c.id, c.email)}
+                                    style={{ background: 'var(--yellow, #f59e0b)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                    title="Pause follow-ups for this contact">
+                                    ⏸ Pause
+                                  </button>
+                                  <button
+                                    onClick={() => stopContact(c.id, c.email)}
+                                    style={{ background: 'var(--red, #ef4444)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                    title="Stop all future emails to this contact">
+                                    ⏹ Stop
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                       );

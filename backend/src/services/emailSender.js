@@ -170,7 +170,7 @@ async function processDueEmails() {
         WHERE es.status = 'scheduled'
           AND es.scheduled_at <= NOW()
           AND seq.status = 'active'
-          AND c.status NOT IN ('replied', 'stopped')
+          AND c.status NOT IN ('replied', 'stopped', 'paused')
           AND seq.daily_limit_hit = false
         ORDER BY es.scheduled_at ASC
         LIMIT 50

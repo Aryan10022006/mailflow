@@ -213,6 +213,7 @@ router.delete('/:id/attachment', authMiddleware, async (req, res) => {
 
 // Save email steps
 router.put('/:id/emails', authMiddleware, async (req, res) => {
+  const client = await pool.connect();
   try {
     const { emails } = req.body; // array of { step_number, subject, body, scheduled_at, delay_days, delay_hours, delay_minutes }
 
@@ -229,20 +230,30 @@ router.put('/:id/emails', authMiddleware, async (req, res) => {
       if (sortedSteps[i].step_number !== i + 1) {
         return res.status(400).json({ error: 'Email steps must be numbered consecutively starting at 1' });
       }
+      if ((sortedSteps[i].subject || '').length > 500) {
+        return res.status(400).json({ error: `Step ${sortedSteps[i].step_number}: subject must be 500 characters or fewer` });
+      }
     }
-    
+
+    await client.query('BEGIN');
+
     // Delete existing steps
-    await pool.query('DELETE FROM sequence_emails WHERE sequence_id = $1', [req.params.id]);
-    
+    await client.query('DELETE FROM sequence_emails WHERE sequence_id = $1', [req.params.id]);
+
     for (const email of sortedSteps) {
-      await pool.query(`
+      await client.query(`
         INSERT INTO sequence_emails (sequence_id, step_number, subject, body, scheduled_at, delay_days, delay_hours, delay_minutes)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `, [req.params.id, email.step_number, email.subject, email.body, email.scheduled_at || null, email.delay_days || 0, email.delay_hours || 0, email.delay_minutes || 0]);
     }
+
+    await client.query('COMMIT');
     res.json({ success: true });
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -572,6 +583,89 @@ router.post('/:id/contacts/:contactId/stop', authMiddleware, async (req, res) =>
     res.status(500).json({ error: err.message });
   }
 });
+
+// Pause a contact — scheduled emails stay queued but won't be sent until unpaused
+router.post('/:id/contacts/:contactId/pause', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT c.* FROM contacts c
+      JOIN sequences seq ON c.sequence_id = seq.id
+      WHERE c.id = $1 AND c.sequence_id = $2 AND seq.user_id = $3
+    `, [req.params.contactId, req.params.id, req.userId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Contact not found' });
+
+    await pool.query(`UPDATE contacts SET status = 'paused' WHERE id = $1`, [req.params.contactId]);
+    await pool.query(`
+      INSERT INTO activity_log (sequence_id, contact_id, event_type, description)
+      VALUES ($1, $2, 'contact_paused', $3)
+    `, [req.params.id, req.params.contactId, `${rows[0].email} follow-ups paused.`]);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Unpause a contact — resumes normal follow-up sending
+router.post('/:id/contacts/:contactId/unpause', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT c.* FROM contacts c
+      JOIN sequences seq ON c.sequence_id = seq.id
+      WHERE c.id = $1 AND c.sequence_id = $2 AND seq.user_id = $3
+    `, [req.params.contactId, req.params.id, req.userId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Contact not found' });
+    if (rows[0].status !== 'paused') return res.status(400).json({ error: 'Contact is not paused' });
+
+    await pool.query(`UPDATE contacts SET status = 'active' WHERE id = $1`, [req.params.contactId]);
+    await pool.query(`
+      INSERT INTO activity_log (sequence_id, contact_id, event_type, description)
+      VALUES ($1, $2, 'contact_unpaused', $3)
+    `, [req.params.id, req.params.contactId, `${rows[0].email} follow-ups resumed.`]);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pause/unpause/skip/unskip a single email send (one step for one contact)
+async function updateSendStatus(req, res, { from, to, eventType, description }) {
+  try {
+    const { rows } = await pool.query(`
+      UPDATE email_sends es SET status = $5
+      FROM contacts c, sequences seq
+      WHERE es.contact_id = c.id AND c.sequence_id = seq.id
+        AND es.contact_id = $1 AND es.sequence_id = $2 AND es.step_number = $3
+        AND seq.user_id = $4 AND es.status = ANY($6)
+      RETURNING es.id
+    `, [req.params.contactId, req.params.id, req.params.stepNumber, req.userId, to, from]);
+    if (rows.length === 0) return res.status(404).json({ error: `No email in '${from.join("'/'")}' status found for this step` });
+    await pool.query(`
+      INSERT INTO activity_log (sequence_id, contact_id, event_type, description)
+      VALUES ($1, $2, $3, $4)
+    `, [req.params.id, req.params.contactId, eventType, description]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+// Pause a single scheduled email
+router.post('/:id/contacts/:contactId/sends/:stepNumber/pause', authMiddleware, (req, res) =>
+  updateSendStatus(req, res, { from: ['scheduled'], to: 'paused', eventType: 'send_paused', description: `Step ${req.params.stepNumber} paused` }));
+
+// Unpause a single email (back to scheduled)
+router.post('/:id/contacts/:contactId/sends/:stepNumber/unpause', authMiddleware, (req, res) =>
+  updateSendStatus(req, res, { from: ['paused'], to: 'scheduled', eventType: 'send_unpaused', description: `Step ${req.params.stepNumber} unpaused` }));
+
+// Skip (cancel) a single email
+router.post('/:id/contacts/:contactId/sends/:stepNumber/skip', authMiddleware, (req, res) =>
+  updateSendStatus(req, res, { from: ['scheduled', 'paused'], to: 'skipped', eventType: 'send_skipped', description: `Step ${req.params.stepNumber} skipped` }));
+
+// Restore a skipped email (back to scheduled)
+router.post('/:id/contacts/:contactId/sends/:stepNumber/unskip', authMiddleware, (req, res) =>
+  updateSendStatus(req, res, { from: ['skipped'], to: 'scheduled', eventType: 'send_unskipped', description: `Step ${req.params.stepNumber} restored` }));
 
 // Resume a stopped contact — schedules the next unsent step immediately
 router.post('/:id/contacts/:contactId/resume', authMiddleware, async (req, res) => {

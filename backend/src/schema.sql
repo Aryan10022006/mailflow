@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   email VARCHAR(255) NOT NULL,
   data JSONB DEFAULT '{}', -- all CSV columns stored here
   current_step INTEGER DEFAULT 0, -- which step they're on
-  status VARCHAR(50) DEFAULT 'pending', -- pending, active, replied, stopped, completed
+  status VARCHAR(50) DEFAULT 'pending', -- pending, active, paused, replied, stopped, completed
   reply_detected_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW()
 );

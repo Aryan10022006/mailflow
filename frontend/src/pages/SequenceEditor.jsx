@@ -108,7 +108,7 @@ export default function SequenceEditor() {
     try {
       await api.put(`/sequences/${id}/emails`, { emails });
       toast.success('Emails saved');
-    } catch { toast.error('Failed to save emails'); }
+    } catch (err) { toast.error(err.response?.data?.error || 'Failed to save emails'); }
     finally { setSaving(false); }
   };
 
