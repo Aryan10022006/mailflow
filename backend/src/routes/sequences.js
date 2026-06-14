@@ -488,7 +488,7 @@ router.post('/:id/force-send', authMiddleware, async (req, res) => {
         htmlBody,
         attachmentPath: send.attachment_path,
         attachmentFilename: send.attachment_filename,
-        replyToMessageId: send.step_number > 1 ? send.original_message_id : null
+        replyToMessageId: send.step_number > 1 ? send.gmail_message_id : null
       });
     } else {
       // Send via Gmail API

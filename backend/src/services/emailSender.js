@@ -199,7 +199,7 @@ async function processDueEmails() {
         se.body as email_body,
         u.signature as user_signature,
         u.gmail_email,
-        es.gmail_message_id as original_message_id
+        // es.gmail_message_id as original_message_id
       FROM email_sends es
       JOIN contacts c ON es.contact_id = c.id
       JOIN sequences seq ON es.sequence_id = seq.id
@@ -221,6 +221,22 @@ async function processDueEmails() {
       const userClient = await pool.connect();
       try {
         for (const send of sends) {
+          const { rows: currentRows } = await userClient.query(`
+            SELECT es.status AS send_status, c.status AS contact_status
+            FROM email_sends es
+            JOIN contacts c ON c.id = es.contact_id
+            WHERE es.id = $1
+          `, [send.id]);
+
+          const current = currentRows[0];
+          if (
+            !current ||
+            ['replied', 'stopped', 'completed'].includes(current.contact_status) ||
+            current.send_status !== 'sending'
+          ) {
+            await userClient.query(`UPDATE email_sends SET status = 'skipped' WHERE id = $1`, [send.id]);
+            continue;
+          }
           try {
             let htmlBody = renderTemplate(send.email_body, send.contact_data);
             if (send.include_signature && send.user_signature) {
@@ -251,7 +267,7 @@ async function processDueEmails() {
                 htmlBody,
                 attachmentPath: send.attachment_path,
                 attachmentFilename: send.attachment_filename,
-                replyToMessageId: send.step_number > 1 ? send.original_message_id : null
+                replyToMessageId: send.step_number > 1 ? send.gmail_message_id : null
               });
               result = { messageId: smtpResult.messageId, threadId: smtpResult.threadId };
             } else {
@@ -272,7 +288,7 @@ async function processDueEmails() {
                 trackingPixelId: send.tracking_pixel_id,
                 includeTracking: send.open_tracking,
                 threadId: send.step_number > 1 ? send.gmail_thread_id : null,
-                replyToMessageId: send.step_number > 1 ? send.original_message_id : null
+                replyToMessageId: send.step_number > 1 ? send.gmail_message_id : null
               });
                 }
 
